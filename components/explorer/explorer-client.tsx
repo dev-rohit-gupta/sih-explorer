@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useMemo } from "react";
 import { ArrowRight, CalendarDays, ExternalLink, Filter, Search, Sparkles } from "lucide-react";
 import type { ExplorerBundle, ProblemStatement } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useUrlQueryState } from "@/hooks/use-url-query-state";
 
 function formatTime(value: string | null) {
   if (!value) return "Not synced yet";
@@ -26,20 +26,8 @@ function shortDescription(problem: ProblemStatement) {
     .slice(0, 240);
 }
 
-type NavigationMode = "push" | "replace";
-
-type ExplorerParam =
-  | "search"
-  | "category"
-  | "theme"
-  | "organization"
-  | "sort"
-  | "snapshot";
-
 export function ExplorerClient({ bundle }: { bundle: ExplorerBundle }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const { searchParams, updateQuery } = useUrlQueryState();
 
   const search = searchParams.get("search") ?? "";
   const categoryParam = searchParams.get("category");
@@ -48,41 +36,6 @@ export function ExplorerClient({ bundle }: { bundle: ExplorerBundle }) {
   const organization = searchParams.get("organization") || "all";
   const sortParam = searchParams.get("sort");
   const sort = sortParam === "title" || sortParam === "ideas" ? sortParam : "ps";
-
-  const [queryInput, setQueryInput] = useState(search);
-
-  useEffect(() => {
-    setQueryInput(search);
-  }, [search]);
-
-  const navigateWithParams = useCallback(
-    (updates: Partial<Record<ExplorerParam, string | null>>, mode: NavigationMode = "replace") => {
-      const params = new URLSearchParams(searchParams.toString());
-
-      for (const [key, value] of Object.entries(updates) as [ExplorerParam, string | null | undefined][]) {
-        if (!value) params.delete(key);
-        else params.set(key, value);
-      }
-
-      const queryString = params.toString();
-      const href = queryString ? `${pathname}?${queryString}` : pathname;
-
-      if (mode === "push") router.push(href, { scroll: false });
-      else router.replace(href, { scroll: false });
-    },
-    [pathname, router, searchParams],
-  );
-
-  useEffect(() => {
-    if (queryInput === search) return;
-
-    const timeout = window.setTimeout(() => {
-      const normalizedSearch = queryInput.trim();
-      navigateWithParams({ search: normalizedSearch || null }, "replace");
-    }, 300);
-
-    return () => window.clearTimeout(timeout);
-  }, [navigateWithParams, queryInput, search]);
 
   const themes = useMemo(
     () => [...new Set(bundle.problems.map((problem) => problem.theme))].sort(),
@@ -127,15 +80,14 @@ export function ExplorerClient({ bundle }: { bundle: ExplorerBundle }) {
   }, [bundle.problems, category, organization, search, sort, theme]);
 
   const clearFilters = () => {
-    setQueryInput("");
-    navigateWithParams(
+    updateQuery(
       {
         search: null,
         category: null,
         theme: null,
         organization: null,
       },
-      "push",
+      { history: "push" },
     );
   };
 
@@ -194,8 +146,10 @@ export function ExplorerClient({ bundle }: { bundle: ExplorerBundle }) {
             <div className="relative mt-8 max-w-3xl">
               <Search className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-neutral-400" />
               <Input
-                value={queryInput}
-                onChange={(event) => setQueryInput(event.target.value)}
+                value={search}
+                onChange={(event) =>
+                  updateQuery({ search: event.target.value || null }, { history: "replace" })
+                }
                 className="h-14 rounded-2xl pl-12 pr-4 text-base shadow-sm"
                 placeholder="Search PS number, title, ministry, theme, technology..."
               />
@@ -236,7 +190,7 @@ export function ExplorerClient({ bundle }: { bundle: ExplorerBundle }) {
               <Select
                 value={category}
                 onValueChange={(value) =>
-                  navigateWithParams({ category: value === "all" ? null : value }, "push")
+                  updateQuery({ category: value === "all" ? null : value }, { history: "push" })
                 }
               >
                 <SelectTrigger>
@@ -252,7 +206,7 @@ export function ExplorerClient({ bundle }: { bundle: ExplorerBundle }) {
               <Select
                 value={theme}
                 onValueChange={(value) =>
-                  navigateWithParams({ theme: value === "all" ? null : value }, "push")
+                  updateQuery({ theme: value === "all" ? null : value }, { history: "push" })
                 }
               >
                 <SelectTrigger className="max-w-56">
@@ -271,7 +225,7 @@ export function ExplorerClient({ bundle }: { bundle: ExplorerBundle }) {
               <Select
                 value={organization}
                 onValueChange={(value) =>
-                  navigateWithParams({ organization: value === "all" ? null : value }, "push")
+                  updateQuery({ organization: value === "all" ? null : value }, { history: "push" })
                 }
               >
                 <SelectTrigger className="max-w-64">
@@ -299,9 +253,9 @@ export function ExplorerClient({ bundle }: { bundle: ExplorerBundle }) {
                 <Select
                   value={String(selectedId)}
                   onValueChange={(value) =>
-                    navigateWithParams(
+                    updateQuery(
                       { snapshot: Number(value) === latestSnapshotId ? null : value },
-                      "push",
+                      { history: "push", navigate: true },
                     )
                   }
                 >
@@ -321,7 +275,7 @@ export function ExplorerClient({ bundle }: { bundle: ExplorerBundle }) {
               <Select
                 value={sort}
                 onValueChange={(value) =>
-                  navigateWithParams({ sort: value === "ps" ? null : value }, "push")
+                  updateQuery({ sort: value === "ps" ? null : value }, { history: "push" })
                 }
               >
                 <SelectTrigger>

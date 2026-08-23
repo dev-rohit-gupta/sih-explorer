@@ -23,8 +23,12 @@ function cleanText(input: string) {
 function cellText($: cheerio.CheerioAPI, el: any) {
   const clone = $(el).clone();
   clone.find("br").replaceWith("\n");
-  clone.find("li").each((_, li) => $(li).prepend("• ").append("\n"));
-  clone.find("p,div").each((_, node) => $(node).append("\n"));
+  clone.find("li").each((_, li) => {
+    $(li).prepend("• ").append("\n");
+  });
+  clone.find("p,div").each((_, node) => {
+    $(node).append("\n");
+  });
   return cleanText(clone.text());
 }
 

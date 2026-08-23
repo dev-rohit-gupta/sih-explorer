@@ -134,3 +134,18 @@ db/
 ## Attribution
 
 This project is unofficial and is not affiliated with Smart India Hackathon, AICTE or the Ministry of Education. Data is sourced from the official SIH portal configured through `SIH_PS_URL`.
+
+## Shareable explorer URLs
+
+Search and filter state is stored in the URL so a team member can share the exact explorer view.
+
+Examples:
+
+```text
+/?search=logistics
+/?search=transport&category=software
+/?theme=Smart+Automation&sort=ideas
+/?organization=Ministry+of+Railways&snapshot=42
+```
+
+Supported query parameters: `search`, `category`, `theme`, `organization`, `sort`, and `snapshot`. Empty/default values are removed automatically to keep URLs clean. Text search is debounced by 300 ms and uses `router.replace`, while deliberate filter/snapshot changes use `router.push` so browser back/forward remains useful.

@@ -1,36 +1,136 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SIH Explorer 2026
 
-## Getting Started
+A fast, resilient, unofficial explorer for the official Smart India Hackathon 2026 problem statements.
 
-First, run the development server:
+## Phase 1
+
+- Next.js 16 App Router + TypeScript
+- Tailwind CSS + shadcn-style UI primitives
+- Drizzle ORM + PostgreSQL (`postgres` driver)
+- Official source URL from `SIH_PS_URL`
+- Server-side SIH HTML ingestion and normalization
+- Relational, immutable snapshots (`sih_snapshots` + `sih_problem_statements`)
+- Latest / previous snapshot switching
+- Automatic stale refresh after the page is already rendered
+- Protected Vercel Cron sync endpoint
+- Source-down fallback: keep serving the last successful snapshot
+- Suspicious scrape protection (count drop / missing IDs / invalid rows)
+- Search across title, PS ID, organization, theme, description and expected solution
+- Software / Hardware, theme and organization filters
+- Problem statement detail pages
+- Vercel Analytics
+
+## Why Drizzle is used
+
+The public explorer is only Phase 1. Phase 2 will add users, Auth.js identities, teams, memberships, invitations, saved PSs, votes, notes, activity and AI research. Keeping the database in Drizzle from the start gives us one typed schema and a migration path instead of spreading raw SQL through the app.
+
+Current schema lives in `db/schema.ts` and Drizzle configuration lives in `drizzle.config.ts`.
+
+## Architecture
+
+The website never needs the official SIH portal to render a normal page. Users read from the most recent saved PostgreSQL snapshot. A background request checks whether the snapshot is stale and attempts a refresh. If SIH is slow or unavailable, the refresh can fail without affecting the current visitor.
+
+Each successful changed scrape creates:
+
+1. one immutable `sih_snapshots` row, and
+2. normalized `sih_problem_statements` rows linked to that snapshot.
+
+Sync attempts are stored in `sih_sync_runs`. `sih_sync_state` provides a short database-backed lease so multiple visitors cannot start the same scrape simultaneously.
+
+## Setup
+
+1. Copy `.env.example` to `.env.local`.
+2. Set `DATABASE_URL` and `CRON_SECRET`.
+3. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+4. For a new database, apply the Drizzle schema. During local development the quickest option is:
+
+   ```bash
+   npm run db:push
+   ```
+
+   If you want versioned SQL migrations instead:
+
+   ```bash
+   npm run db:generate
+   npm run db:migrate
+   ```
+
+   Commit the generated `drizzle/` migration files before deploying.
+
+5. Start the app:
+
+   ```bash
+   npm run dev
+   ```
+
+6. Create the first SIH snapshot by calling `GET /api/cron/sync` with:
+
+   ```text
+   Authorization: Bearer <CRON_SECRET>
+   ```
+
+7. Open `/`.
+
+### Drizzle commands
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run db:push       # sync schema directly during development
+npm run db:generate   # generate SQL migration files from db/schema.ts
+npm run db:migrate    # apply generated migrations
+npm run db:studio     # inspect data using Drizzle Studio
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+There is no runtime `CREATE TABLE IF NOT EXISTS` logic anymore. Schema changes are explicit and managed through Drizzle.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Add the environment variables from `.env.example`. `vercel.json` includes a daily cron as a backstop. Normal visitors also trigger `/api/sync-if-stale` after receiving cached data; that endpoint only fetches SIH when the latest successful check is older than `SIH_SYNC_STALE_MINUTES`.
 
-## Learn More
+For production, generate and commit migrations, then run `npm run db:migrate` as part of your deployment/database migration process.
 
-To learn more about Next.js, take a look at the following resources:
+## Data integrity
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+A fetched page is not promoted blindly. The sync rejects suspicious parses when:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- too few statements are returned,
+- the count suddenly drops by more than 30%,
+- duplicate PS numbers are found, or
+- required fields are missing.
 
-## Deploy on Vercel
+A new snapshot and all of its problem statements are inserted in one database transaction. If that transaction fails, the previous successful snapshot stays intact.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Old snapshots are deleted according to `SIH_SNAPSHOT_RETENTION`; linked problem statements are removed automatically through the foreign key cascade.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Phase 2 boundary
+
+The code intentionally does **not** add authentication yet. Planned authenticated features can be added on top of the same Drizzle schema layer:
+
+- Auth.js credentials + Google sign-in
+- team creation and leader/admin role
+- leader-created member accounts
+- Nodemailer/Gmail invite emails
+- temporary password + forced password setup flow
+- join-team flow
+- team shortlist, voting, notes and activity
+- Gemini-assisted research per problem statement
+
+Recommended future schema modules:
+
+```text
+db/
+├── schema.ts               # Phase 1 today
+└── schema/                 # split here as Phase 2 grows
+    ├── sih.ts
+    ├── auth.ts
+    ├── teams.ts
+    └── research.ts
+```
+
+## Attribution
+
+This project is unofficial and is not affiliated with Smart India Hackathon, AICTE or the Ministry of Education. Data is sourced from the official SIH portal configured through `SIH_PS_URL`.

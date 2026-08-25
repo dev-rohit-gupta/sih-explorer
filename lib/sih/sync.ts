@@ -16,7 +16,7 @@ function stableHash(problems: ProblemStatement[]) {
   return createHash("sha256").update(JSON.stringify(problems)).digest("hex");
 }
 
-function validateSnapshot(problems: ProblemStatement[], previousCount?: number) {
+export function validateSnapshot(problems: ProblemStatement[], previousCount?: number) {
   const minCount = Number(process.env.SIH_MIN_PS_COUNT ?? 50);
 
   if (problems.length < minCount) {

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { sihProblemStatements, sihSnapshots, sihSyncRuns } from "@/db/schema";
 import { db } from "@/lib/db";
 import type { ExplorerBundle, ProblemCategory, ProblemStatement, SnapshotSummary } from "@/lib/types";
@@ -168,3 +168,134 @@ export async function getProblemStatement(psNumber: string, snapshotId?: number)
     problem: bundle.problems.find((problem) => problem.psNumber.toLowerCase() === psNumber.toLowerCase()) ?? null,
   };
 }
+export async function getLatestSnapshot() {
+  const database = db();
+
+  const [latest] = await database
+    .select({
+      id: sihSnapshots.id,
+      sourceUrl: sihSnapshots.sourceUrl,
+      sourceCheckedAt: sihSnapshots.sourceCheckedAt,
+      createdAt: sihSnapshots.createdAt,
+      contentHash: sihSnapshots.contentHash,
+      problemStatementCount: sihSnapshots.problemStatementCount,
+      softwareCount: sihSnapshots.softwareCount,
+      hardwareCount: sihSnapshots.hardwareCount,
+    })
+    .from(sihSnapshots)
+    .orderBy(desc(sihSnapshots.createdAt))
+    .limit(1);
+
+  return latest ?? null;
+}
+
+type CreateSnapshotInput = {
+  problems: ProblemStatement[];
+  contentHash: string;
+  sourceCheckedAt: Date;
+  sourceUrl: string;
+};
+
+export async function createSnapshot({
+  problems,
+  contentHash,
+  sourceCheckedAt,
+  sourceUrl,
+}: CreateSnapshotInput) {
+  const database = db();
+
+  const snapshotId = await database.transaction(async (tx) => {
+    const softwareCount = problems.filter(
+      (problem) => problem.category === "Software",
+    ).length;
+    const hardwareCount = problems.length - softwareCount;
+
+    const [created] = await tx
+      .insert(sihSnapshots)
+      .values({
+        sourceUrl,
+        sourceCheckedAt,
+        contentHash,
+        problemStatementCount: problems.length,
+        softwareCount,
+        hardwareCount,
+      })
+      .returning({ id: sihSnapshots.id });
+
+    if (!created) {
+      throw new Error("Failed to create SIH snapshot");
+    }
+
+    if (problems.length > 0) {
+      await tx.insert(sihProblemStatements).values(
+        problems.map((problem) => ({
+          snapshotId: created.id,
+          serialNo: problem.serialNo,
+          psNumber: problem.psNumber,
+          numericId: problem.numericId,
+          title: problem.title,
+          organization: problem.organization,
+          department: problem.department,
+          category: problem.category,
+          theme: problem.theme,
+          submittedIdeas: problem.submittedIdeas,
+          ideaCapacity: problem.ideaCapacity,
+          deadline: problem.deadline,
+          background: problem.background,
+          description: problem.description,
+          expectedSolution: problem.expectedSolution,
+          datasetInfo: problem.datasetInfo,
+          datasetUrl: problem.datasetUrl,
+          youtubeUrl: problem.youtubeUrl,
+          contactInfo: problem.contactInfo,
+          officialUrl: problem.officialUrl,
+        })),
+      );
+    }
+
+    return created.id;
+  });
+
+  return { id: snapshotId };
+}
+
+export async function pruneSnapshots() {
+  const database = db();
+  const retention = Math.max(
+    2,
+    Number(process.env.SIH_SNAPSHOT_RETENTION ?? 20),
+  );
+
+  const oldSnapshots = await database
+    .select({ id: sihSnapshots.id })
+    .from(sihSnapshots)
+    .orderBy(desc(sihSnapshots.createdAt))
+    .offset(retention);
+
+  if (oldSnapshots.length === 0) return;
+
+  await database
+    .delete(sihSnapshots)
+    .where(inArray(sihSnapshots.id, oldSnapshots.map((snapshot) => snapshot.id)));
+}
+
+type RecordExternalSyncSuccessInput = {
+  snapshotId: number;
+  sourceCheckedAt: Date;
+};
+
+export async function recordExternalSyncSuccess({
+  snapshotId,
+  sourceCheckedAt,
+}: RecordExternalSyncSuccessInput) {
+  const database = db();
+
+  await database.insert(sihSyncRuns).values({
+    startedAt: sourceCheckedAt,
+    finishedAt: new Date(),
+    status: "success",
+    httpStatus: 200,
+    snapshotId,
+  });
+}
+

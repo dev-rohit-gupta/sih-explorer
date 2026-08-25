@@ -1,0 +1,38 @@
+name: Test SIH Access
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test SIH with Node fetch
+        run: |
+          node -e "
+          fetch('https://sih.gov.in/sih2026PS', {
+            headers: {
+              'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36',
+              'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'accept-language': 'en-US,en;q=0.9',
+              'referer': 'https://sih.gov.in/'
+            }
+          })
+          .then(async r => {
+            console.log('STATUS:', r.status, r.statusText);
+            const text = await r.text();
+            console.log('BODY:', text.slice(0, 300));
+
+            if (!r.ok) process.exit(1);
+          })
+          .catch(err => {
+            console.error(err);
+            process.exit(1);
+          });
+          "

@@ -125,18 +125,42 @@ export async function syncSih({ force = false }: { force?: boolean } = {}) {
 
   try {
     const response = await fetch(sourceUrl, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(Number(process.env.SIH_FETCH_TIMEOUT_MS ?? 10_000)),
-      headers: {
-        "user-agent": "Mozilla/5.0 SIH-Explorer/1.0",
-        accept: "text/html,application/xhtml+xml",
-      },
-    });
+  cache: "no-store",
+  redirect: "follow",
+  signal: AbortSignal.timeout(
+    Number(process.env.SIH_FETCH_TIMEOUT_MS ?? 10_000)
+  ),
+  headers: {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+      "AppleWebKit/537.36 (KHTML, like Gecko) " +
+      "Chrome/151.0.0.0 Safari/537.36",
+
+    Accept:
+      "text/html,application/xhtml+xml,application/xml;q=0.9," +
+      "image/avif,image/webp,*/*;q=0.8",
+
+    "Accept-Language": "en-US,en;q=0.9",
+    Referer: "https://sih.gov.in/",
+    "Cache-Control": "no-cache",
+    Pragma: "no-cache",
+    "Upgrade-Insecure-Requests": "1",
+  },
+});
 
     httpStatus = response.status;
     if (!response.ok) {
-      throw new Error(`SIH source returned HTTP ${response.status}`);
-    }
+  const body = await response.text();
+
+  console.error("[SIH SYNC] Source request failed", {
+    status: response.status,
+    statusText: response.statusText,
+    url: response.url,
+    bodyPreview: body.slice(0, 500),
+  });
+
+  throw new Error(`SIH source returned HTTP ${response.status}`);
+}
 
     const html = await response.text();
     const problems = parseSihHtml(html, sourceUrl);
